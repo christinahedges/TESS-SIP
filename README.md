@@ -17,4 +17,4 @@ This repository contains a demo notebook for how to calculate a SIP for NASA CVZ
 
 ## Acknowledgements
 
-This tool uses the [lightkurve](https://github.com/keplerGO/lightkurve) tool to build a SIP, and relies on the `RegressionCorrector` and `SparseDesignMatrix` lightkurve tools. The SIP project was developed in part at the `online.tess.science` meeting, which took place globally in 2020 September.
+This tool uses the [lightkurve](https://github.com/keplerGO/lightkurve) tool to build a SIP, and relies on the `RegressionCorrector` and `SparseDesignMatrix` lightkurve tools. The SIP project was developed in part at the `online.tess.science` meeting, which took place globally in 2020 September. This research made use of [Astropy](http://www.astropy.org.) a community-developed core Python package for Astronomy.
