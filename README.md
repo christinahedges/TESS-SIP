@@ -10,7 +10,7 @@ SIP is a method of detrending telescope systematics simultaneously with calculat
 
 ## Usage
 
-This repository contains a demo notebook for how to calculate a SIP for NASA CVZ targets. To use this demo, you can either download and run the notebook, run the notebook online google's [Colab](https://colab.research.google.com/github/christinahedges/TESS-SIP/blob/master/TESS-SIP.ipynb) (for free!), or re-write/copy the scripts in the notebook in your own tools. 
+This repository contains a demo notebook for how to calculate a SIP for NASA CVZ targets. To use this demo, you can either download and run the notebook, or re-write/copy the scripts in the notebook in your own tools. 
 
 ![Example SIP output](https://github.com/christinahedges/TESS-SIP/blob/master/demo.png?raw=true)
 
