@@ -1,18 +1,37 @@
-# TESS SIP 
+# TESS SIP
 <a href="https://doi.org/10.5281/zenodo.4291096"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.4291096.svg" alt="DOI"></a>
 
-Demo tool for creating a Systematics-insensitive Periodogram (SIP) to detect long period rotation in NASA's TESS mission data. 
+Demo tool for creating a Systematics-insensitive Periodogram (SIP) to detect long period rotation in NASA's TESS mission data.
 
 ## What is SIP
 
-SIP is a method of detrending telescope systematics simultaneously with calculating a Lomb-Scargle periodogram. You can read a more in-depth work of how SIP is used in NASA's Kepler/K2 data [here](https://ui.adsabs.harvard.edu/abs/2016ApJ...818..109A/abstract). 
+SIP is a method of detrending telescope systematics simultaneously with calculating a Lomb-Scargle periodogram. You can read a more in-depth work of how SIP is used in NASA's Kepler/K2 data [here](https://ui.adsabs.harvard.edu/abs/2016ApJ...818..109A/abstract).
 
 
 ## Usage
 
-This repository contains a demo notebook for how to calculate a SIP for NASA CVZ targets. To use this demo, you can either download and run the notebook, or re-write/copy the scripts in the notebook in your own tools. 
+This repository contains a Python tool to create a SIP. An example of a SIP output is below. You can run a simple notebook in the `docs` folder to show how to use SIP.
+
+```python
+from tess_sip import SIP
+import lightkurve as lk
+# Download target pixel files
+tpfs = lk.search_targetpixelfile('TIC 288735205', mission='tess').download_all()
+# Run SIP
+r = SIP(tpfs)
+```
+
+`r` is a dictionary containing all the information required to build a plot like the one below.
 
 ![Example SIP output](https://github.com/christinahedges/TESS-SIP/blob/master/demo.png?raw=true)
+
+### Installation
+
+You can pip install this tool:
+
+```
+pip install tess_sip
+```
 
 
 ## Requirements
