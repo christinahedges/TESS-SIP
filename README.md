@@ -1,5 +1,5 @@
 # TESS SIP
-<a href="https://doi.org/10.5281/zenodo.4291096"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.4291096.svg" alt="DOI"></a>
+<a href="https://doi.org/10.5281/zenodo.4299101"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.4299101.svg" alt="DOI"></a>
 
 Demo tool for creating a Systematics-insensitive Periodogram (SIP) to detect long period rotation in NASA's TESS mission data.
 
