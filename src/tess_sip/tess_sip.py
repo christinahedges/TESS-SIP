@@ -1,7 +1,7 @@
 import lightkurve as lk
 import numpy as np
 from scipy import sparse
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 import warnings
 
 from astropy.timeseries import lombscargle
