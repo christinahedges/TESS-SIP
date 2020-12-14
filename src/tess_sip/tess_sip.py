@@ -31,7 +31,7 @@ def vstack(dms):
         return lk.DesignMatrix(X, name=name, prior_mu=prior_mu, prior_sigma=prior_sigma)
 
 
-def SIP(tpfs, sigma=5, min_period=10, max_period=100, nperiods=300, npca_components=2, aperture_threshold=3):
+def SIP(tpfs, sigma=5, min_period=10, max_period=100, nperiods=300, npca_components=2, aperture_threshold=3, sff=False, sff_kwargs={}):
     """
     Systematics-insensitive periodogram for finding periods in long period NASA's TESS data.
 
@@ -62,6 +62,11 @@ def SIP(tpfs, sigma=5, min_period=10, max_period=100, nperiods=300, npca_compone
         If there is no aperture mask from the pipeline, will create one. Set
         aperture_threshold to set the thresholding for the aperture creation.
         (See lightkurve's create_threshold_mask function.)
+    sff : boolean
+        Whether to run SFF detrending simultaneously. This is most useful for K2 data.
+        When True, will run SFF detrending.
+    sff_kwargs : dict
+        Dictionary of SFF key words to pass. See lightkurve's SFFCorrector.
 
     Returns
     -------
@@ -112,10 +117,10 @@ def SIP(tpfs, sigma=5, min_period=10, max_period=100, nperiods=300, npca_compone
         if mask is None:
             mask = np.ones(len(lc.flux.value), bool)
         sigma_w_inv = dm.X[mask].T.dot(dm.X[mask].multiply(sigma_f_inv[mask])).toarray()
-        sigma_w_inv += np.diag(1. / dm.prior_sigma**2)
+        sigma_w_inv += np.diag(1. / dm.prior_sigma.value**2)
 
         B = dm.X[mask].T.dot((lc.flux.value[mask]/lc.flux_err.value[mask]**2))
-        B += dm.prior_mu/dm.prior_sigma**2
+        B += dm.prior_mu/dm.prior_sigma.value**2
         w = np.linalg.solve(sigma_w_inv, B)
         with warnings.catch_warnings():
             warnings.simplefilter('ignore')
@@ -128,6 +133,16 @@ def SIP(tpfs, sigma=5, min_period=10, max_period=100, nperiods=300, npca_compone
     period = 27
     ls_dm = lk.DesignMatrix(lombscargle.implementations.mle.design_matrix(lc.time.jd, frequency=1/period, bias=False, nterms=1), name='LS').to_sparse()
     dm = lk.SparseDesignMatrixCollection([systematics_dm, ls_dm]).to_designmatrix(name='design_matrix')
+
+    if sff:
+        sff_dm = []
+        for tpf in tpfs_uncorr:
+            s = lk.correctors.SFFCorrector(tpf.to_lightcurve())
+            _ = s.correct(**sff_kwargs)
+            sff_dm.append(s.dmc['sff'].to_sparse())
+        sff_dm = vstack(sff_dm)
+        dm = lk.SparseDesignMatrixCollection([dm, sff_dm]).to_designmatrix(name='design_matrix')
+
 
     # Do a first pass at 27 days, just to find ridiculous outliers
     mod = fit_model(lc, return_model=True)
