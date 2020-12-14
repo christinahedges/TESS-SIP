@@ -78,21 +78,24 @@ def SIP(tpfs, sigma=5, min_period=10, max_period=100, nperiods=300, npca_compone
 
     # Get the un-background subtracted data
     if hasattr(tpfs[0], 'flux_bkg'):
-        tpfs_uncorr = [(tpf + np.nan_to_num(tpf.flux_bkg.value))[np.isfinite(tpf.flux_bkg.value.sum(axis=(1, 2)))] for tpf in tpfs]
+        tpfs_uncorr = [(tpf + np.nan_to_num(tpf.flux_bkg.value))[np.isfinite(np.nansum(tpf.flux_bkg.value, axis=(1, 2)))] for tpf in tpfs]
     else:
         tpfs_uncorr = tpfs
+
     apers = [tpf.pipeline_mask if tpf.pipeline_mask.any() else tpf.create_threshold_mask(aperture_threshold) for tpf in tpfs_uncorr]
+    bkg_apers = [(~aper) & (np.nansum(tpf.flux, axis=0) != 0) for aper, tpf in zip(apers, tpfs_uncorr)]
     lc = lk.LightCurveCollection([tpf.to_lightcurve(aperture_mask=aper) for tpf, aper in zip(tpfs_uncorr, apers)]).stitch(lambda x:x).normalize()
     lc.flux_err.value[~np.isfinite(lc.flux_err.value)] = np.nanmedian(lc.flux_err.value)
 
+
     # Run the same routines on the background pixels
-    lc_bkg = lk.LightCurveCollection([tpf.to_lightcurve(aperture_mask=~aper) for tpf, aper in zip(tpfs_uncorr, apers)]).stitch(lambda x:x).normalize()
+    lc_bkg = lk.LightCurveCollection([tpf.to_lightcurve(aperture_mask=bkg_aper) for tpf, bkg_aper in zip(tpfs_uncorr, bkg_apers)]).stitch(lambda x:x).normalize()
     lc_bkg.flux_err.value[~np.isfinite(lc_bkg.flux_err.value)] = np.nanmedian(lc_bkg.flux_err.value)
 
 
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')
-        bkgs = [lk.DesignMatrix(tpf.flux.value[:, ~aper], name='bkg').pca(npca_components).append_constant().to_sparse() for tpf, aper in zip(tpfs_uncorr, apers)]
+        bkgs = [lk.DesignMatrix(tpf.flux.value[:, bkg_aper], name='bkg').pca(npca_components).append_constant().to_sparse() for tpf, bkg_aper in zip(tpfs_uncorr, bkg_apers)]
         for bkg in bkgs:
             bkg.prior_mu[-1] = 1
             bkg.prior_sigma[-1] = 0.1
