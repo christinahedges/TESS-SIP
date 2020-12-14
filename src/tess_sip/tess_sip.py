@@ -72,6 +72,8 @@ def SIP(tpfs, sigma=5, min_period=10, max_period=100, nperiods=300, npca_compone
             raw_lc: the original light curve from the input target pixel files
             corr_lc: the light curve with the best fitting systematics removed
             period_at_max_power: the best fit period of the sinusoid.
+            power_bkg: the power at each period for the pixels -outside- the aperture
+            raw_lc_bkg: the background light curve (pixels outside aperture)
     """
 
     # Get the un-background subtracted data
