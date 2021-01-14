@@ -9,7 +9,7 @@ print(lk.__file__)
 
 # Download target pixel files
 # We're using TOI-700
-tpfs = lk.search_targetpixelfile('TIC 150428135', mission='tess', sector=np.arange(14)).download_all()
+tpfs = lk.search_targetpixelfile('TIC 150428135', mission='tess', sector=list(np.arange(14))).download_all()
 
 # Run SIP
 r = SIP(tpfs, min_period=10, max_period=80)
