@@ -117,10 +117,10 @@ def SIP(tpfs, sigma=5, min_period=10, max_period=100, nperiods=300, npca_compone
         if mask is None:
             mask = np.ones(len(lc.flux.value), bool)
         sigma_w_inv = dm.X[mask].T.dot(dm.X[mask].multiply(sigma_f_inv[mask])).toarray()
-        sigma_w_inv += np.diag(1. / dm.prior_sigma.value**2)
+        sigma_w_inv += np.diag(1. / dm.prior_sigma**2)
 
         B = dm.X[mask].T.dot((lc.flux.value[mask]/lc.flux_err.value[mask]**2))
-        B += dm.prior_mu/dm.prior_sigma.value**2
+        B += dm.prior_mu/dm.prior_sigma**2
         w = np.linalg.solve(sigma_w_inv, B)
         with warnings.catch_warnings():
             warnings.simplefilter('ignore')
