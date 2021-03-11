@@ -26,9 +26,9 @@ def vstack(dms):
     prior_sigma = np.hstack([dm.prior_sigma for dm in dms])
     name = dms[0].name
     if sparse.issparse(dms[0].X):
-        return lk.SparseDesignMatrix(X.tocsr(), name=name, prior_mu=prior_mu, prior_sigma=prior_sigma)
+        return lk.correctors.SparseDesignMatrix(X.tocsr(), name=name, prior_mu=prior_mu, prior_sigma=prior_sigma)
     else:
-        return lk.DesignMatrix(X, name=name, prior_mu=prior_mu, prior_sigma=prior_sigma)
+        return lk.correctors.DesignMatrix(X, name=name, prior_mu=prior_mu, prior_sigma=prior_sigma)
 
 
 def SIP(tpfs, sigma=5, min_period=10, max_period=100, nperiods=300, npca_components=2, aperture_threshold=3, sff=False, sff_kwargs={}):
@@ -100,7 +100,7 @@ def SIP(tpfs, sigma=5, min_period=10, max_period=100, nperiods=300, npca_compone
 
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')
-        bkgs = [lk.DesignMatrix(tpf.flux.value[:, bkg_aper], name='bkg').pca(npca_components).append_constant().to_sparse() for tpf, bkg_aper in zip(tpfs_uncorr, bkg_apers)]
+        bkgs = [lk.correctors.DesignMatrix(tpf.flux.value[:, bkg_aper], name='bkg').pca(npca_components).append_constant().to_sparse() for tpf, bkg_aper in zip(tpfs_uncorr, bkg_apers)]
         for bkg in bkgs:
             bkg.prior_mu[-1] = 1
             bkg.prior_sigma[-1] = 0.1
@@ -117,10 +117,10 @@ def SIP(tpfs, sigma=5, min_period=10, max_period=100, nperiods=300, npca_compone
         if mask is None:
             mask = np.ones(len(lc.flux.value), bool)
         sigma_w_inv = dm.X[mask].T.dot(dm.X[mask].multiply(sigma_f_inv[mask])).toarray()
-        sigma_w_inv += np.diag(1. / dm.prior_sigma.value**2)
+        sigma_w_inv += np.diag(1. / dm.prior_sigma**2)
 
         B = dm.X[mask].T.dot((lc.flux.value[mask]/lc.flux_err.value[mask]**2))
-        B += dm.prior_mu/dm.prior_sigma.value**2
+        B += dm.prior_mu/dm.prior_sigma**2
         w = np.linalg.solve(sigma_w_inv, B)
         with warnings.catch_warnings():
             warnings.simplefilter('ignore')
@@ -131,8 +131,8 @@ def SIP(tpfs, sigma=5, min_period=10, max_period=100, nperiods=300, npca_compone
 
     # Make a dummy design matrix
     period = 27
-    ls_dm = lk.DesignMatrix(lombscargle.implementations.mle.design_matrix(lc.time.jd, frequency=1/period, bias=False, nterms=1), name='LS').to_sparse()
-    dm = lk.SparseDesignMatrixCollection([systematics_dm, ls_dm]).to_designmatrix(name='design_matrix')
+    ls_dm = lk.correctors.DesignMatrix(lombscargle.implementations.mle.design_matrix(lc.time.jd, frequency=1/period, bias=False, nterms=1), name='LS').to_sparse()
+    dm = lk.correctors.SparseDesignMatrixCollection([systematics_dm, ls_dm]).to_designmatrix(name='design_matrix')
 
     if sff:
         sff_dm = []
@@ -141,7 +141,7 @@ def SIP(tpfs, sigma=5, min_period=10, max_period=100, nperiods=300, npca_compone
             _ = s.correct(**sff_kwargs)
             sff_dm.append(s.dmc['sff'].to_sparse())
         sff_dm = vstack(sff_dm)
-        dm = lk.SparseDesignMatrixCollection([dm, sff_dm]).to_designmatrix(name='design_matrix')
+        dm = lk.correctors.SparseDesignMatrixCollection([dm, sff_dm]).to_designmatrix(name='design_matrix')
 
 
     # Do a first pass at 27 days, just to find ridiculous outliers
