@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "tess-sip"
-version = "1.0.7"
+version = "1.0.8"
 description = "Demo tool for creating a Systematics-insensitive Periodogram (SIP) to detect long period rotation in NASA's TESS mission data."
 authors = ["Christina Hedges <christina.l.hedges@nasa.gov>"]
 readme = "README.md"
