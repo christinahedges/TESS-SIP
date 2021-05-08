@@ -99,6 +99,7 @@ def SIP(
             period_at_max_power: the best fit period of the sinusoid.
             power_bkg: the power at each period for the pixels -outside- the aperture
             raw_lc_bkg: the background light curve (pixels outside aperture)
+            model: the systematics model used to correct the light curve
     """
 
     if ((type(tpfs) is lk.collections.TargetPixelFileCollection) or 
@@ -284,6 +285,7 @@ def SIP(
         "raw_lc_bkg": lc_bkg,
         "corr_lc": lc - mod * lc.flux.unit + 1 * lc.flux.unit,
         "period_at_max_power": periods[am],
+        "model": mod * lc.flux.unit,
     }
 
     return r
