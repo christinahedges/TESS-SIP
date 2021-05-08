@@ -44,6 +44,7 @@ def SIP(
     aperture_threshold=3,
     sff=False,
     sff_kwargs={},
+    custom_periods=None,
 ):
     """
     Systematics-insensitive periodogram for finding periods in long period NASA's TESS data.
@@ -82,6 +83,10 @@ def SIP(
         When True, will run SFF detrending.
     sff_kwargs : dict
         Dictionary of SFF key words to pass. See lightkurve's SFFCorrector.
+    custom_periods : None or numpy.ndarray
+        A list of specifically defined periods for the periodogram. If this
+        parameter is not None, then the parameters min_period, max_period, and
+        nperiods will be ignored.
 
     Returns
     -------
@@ -249,6 +254,8 @@ def SIP(
 
     # Loop over some periods we care about
     periods = 1 / np.linspace(1 / min_period, 1 / max_period, nperiods)
+    if custom_periods is not None:
+        periods = np.copy(custom_periods)
     ws = np.zeros((len(periods), dm.X.shape[1]))
     ws_err = np.zeros((len(periods), dm.X.shape[1]))
     ws_bkg = np.zeros((len(periods), dm.X.shape[1]))
