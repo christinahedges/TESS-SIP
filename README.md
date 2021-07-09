@@ -1,7 +1,7 @@
 # TESS SIP
 <a href="https://doi.org/10.5281/zenodo.4300754"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.4300754.svg" alt="DOI"></a>
 
-Demo tool for creating a Systematics-insensitive Periodogram (SIP) to detect long period rotation in NASA's TESS mission data. Read more about TESS-SIP in our published [Research Note of the American Astronomical Society](https://iopscience.iop.org/article/10.3847/2515-5172/abd106/meta).
+Tool for creating a Systematics-insensitive Periodogram (SIP) to detect long period rotation in NASA's TESS mission data. Read more about TESS-SIP in our published [Research Note of the American Astronomical Society](https://iopscience.iop.org/article/10.3847/2515-5172/abd106/meta).
 
 ## What is SIP
 
