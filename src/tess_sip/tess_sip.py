@@ -102,82 +102,81 @@ def SIP(
             model: the systematics model used to correct the light curve
     """
 
-    if ((type(data) is lk.collections.TargetPixelFileCollection) or 
-            (type(data) is lk.targetpixelfile.TessTargetPixelFile)):
-        # Get the un-background subtracted data
-        print("Target Pixel File Input")
-        if hasattr(data[0], "flux_bkg"):
-            data_uncorr = [
-                (tpf + np.nan_to_num(tpf.flux_bkg.value))[
-                    np.isfinite(np.nansum(tpf.flux_bkg.value, axis=(1, 2)))
-                ]
-                for tpf in data
-            ]
-        else:
-            data_uncorr = data
-
-        apers = [
-            tpf.pipeline_mask
-            if tpf.pipeline_mask.any()
-            else tpf.create_threshold_mask(aperture_threshold)
-            for tpf in data_uncorr
-        ]
-        bkg_apers = [
-            (~aper) & (np.nansum(tpf.flux, axis=0) != 0)
-            for aper, tpf in zip(apers, data_uncorr)
-        ]
-        lc = (
-            lk.LightCurveCollection(
-                [
-                    tpf.to_lightcurve(aperture_mask=aper)
-                    for tpf, aper in zip(data_uncorr, apers)
-                ]
-            )
-            .stitch(lambda x: x)
-            .normalize()
-        )
-        lc.flux_err.value[~np.isfinite(lc.flux_err.value)] = np.nanmedian(lc.flux_err.value)
-
-        # Run the same routines on the background pixels
-        lc_bkg = (
-            lk.LightCurveCollection(
-                [
-                    tpf.to_lightcurve(aperture_mask=bkg_aper)
-                    for tpf, bkg_aper in zip(data_uncorr, bkg_apers)
-                ]
-            )
-            .stitch(lambda x: x)
-            .normalize()
-        )
-        lc_bkg.flux_err.value[~np.isfinite(lc_bkg.flux_err.value)] = np.nanmedian(
-            lc_bkg.flux_err.value
-        )
-        
-    # Check if tpfs is a lightcurve file rather than a target pixel file
-    elif ((type(data) is lk.lightcurve.TessLightCurve) or 
-            (type(data) is lk.collections.LightCurveCollection)):
-        print("Lightcurve File Input")
-        for lcf in data:
-            lcf.sap_flux.value[~np.isfinite(lcf.sap_flux.value)] = np.nanmedian(lcf.sap_flux.value)
-            lcf.sap_bkg.value[~np.isfinite(lcf.sap_bkg.value)] = np.nanmedian(lcf.sap_bkg.value)
-            lcf.flux = lcf.sap_flux
-            lcf.flux_err = lcf.sap_flux_err
-        data_uncorr = [(lcf + np.nan_to_num(lcf.sap_bkg))[np.isfinite(lcf.sap_bkg)] for lcf in data]
-
-        lc = lk.LightCurveCollection(data_uncorr).stitch(lambda x:x).normalize()
-        lc.flux_err.value[~np.isfinite(lc.flux_err.value)] = np.nanmedian(lc.flux_err.value)
-
-        lc_bkg = lk.LightCurveCollection(data_uncorr).stitch(lambda x:x)
-        lc_bkg.flux = lc_bkg.sap_bkg
-        lc_bkg.flux_err = lc_bkg.sap_bkg_err
-        lc_bkg = lc_bkg.normalize()
-        lc_bkg.flux_err.value[~np.isfinite(lc_bkg.flux_err.value)] = np.nanmedian(lc_bkg.flux_err.value)
-        
+    # Checking if input data is correct type
+    if isinstance(data, lk.TargetPixelFileCollection):
+        if not all([isinstance(tpf, lk.TessTargetPixelFile) for tpf in data]):
+            raise TypeError(
+                """The list of objects within the input data type
+                lightkurve.TargetPixelFileCollection must be all be type:
+                lightkurve.TessTargetPixelFile""")
+    elif isinstance(data, lk.LightCurveCollection):
+        if not all([isinstance(lcf, lk.TessLightCurve) for lcf in data]):
+            raise TypeError(
+                """The list of objects within the input data type
+                lightkurve.LightCurveCollection must be all be type:
+                lightkurve.TessLightCurve""")
+    else:
+        raise TypeError(
+            """The data input must be a collection of target pixel files
+            or light curve files of type:
+            lightkurve.TargetPixelFileCollection
+            OR
+            lightkurve.LightCurveCollection""")    
+    
+    # Setup data 
     with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
+        warnings.simplefilter('ignore')
+    
+        # Setup for when input data is a collection of target pixel files
+        if isinstance(data, lk.TargetPixelFileCollection):
+            # Get the un-background subtracted data
+            if hasattr(data[0], "flux_bkg"):
+                data_uncorr = [
+                    (tpf + np.nan_to_num(tpf.flux_bkg.value))[
+                        np.isfinite(np.nansum(tpf.flux_bkg.value, axis=(1, 2)))
+                    ]
+                    for tpf in data
+                ]
+            else:
+                data_uncorr = data
 
-        if ((type(data) is lk.collections.TargetPixelFileCollection) or 
-                (type(data) is lk.targetpixelfile.TessTargetPixelFile):
+            apers = [
+                tpf.pipeline_mask
+                if tpf.pipeline_mask.any()
+                else tpf.create_threshold_mask(aperture_threshold)
+                for tpf in data_uncorr
+            ]
+            bkg_apers = [
+                (~aper) & (np.nansum(tpf.flux, axis=0) != 0)
+                for aper, tpf in zip(apers, data_uncorr)
+            ]
+            lc = (
+                lk.LightCurveCollection(
+                    [
+                        tpf.to_lightcurve(aperture_mask=aper)
+                        for tpf, aper in zip(data_uncorr, apers)
+                    ]
+                )
+                .stitch(lambda x: x)
+                .normalize()
+            )
+            lc.flux_err.value[~np.isfinite(lc.flux_err.value)] = np.nanmedian(lc.flux_err.value)
+
+            # Run the same routines on the background pixels
+            lc_bkg = (
+                lk.LightCurveCollection(
+                    [
+                        tpf.to_lightcurve(aperture_mask=bkg_aper)
+                        for tpf, bkg_aper in zip(data_uncorr, bkg_apers)
+                    ]
+                )
+                .stitch(lambda x: x)
+                .normalize()
+            )
+            lc_bkg.flux_err.value[~np.isfinite(lc_bkg.flux_err.value)] = np.nanmedian(
+                lc_bkg.flux_err.value
+            )
+            
             bkgs = [
                 lk.correctors.DesignMatrix(
                     np.nan_to_num(tpf.flux.value[:, bkg_aper]), name="bkg")
@@ -186,8 +185,25 @@ def SIP(
                 .to_sparse()
                 for tpf, bkg_aper in zip(data_uncorr, bkg_apers)
             ]
-        elif ((type(data) is lk.lightcurve.TessLightCurve) or 
-                (type(data) is lk.collections.LightCurveCollection):
+
+        # Setup for when input data is a collection of light curve files
+        elif isinstance(data, lk.LightCurveCollection):
+            for lcf in data:
+                lcf.sap_flux.value[~np.isfinite(lcf.sap_flux.value)] = np.nanmedian(lcf.sap_flux.value)
+                lcf.sap_bkg.value[~np.isfinite(lcf.sap_bkg.value)] = np.nanmedian(lcf.sap_bkg.value)
+                lcf.flux = lcf.sap_flux
+                lcf.flux_err = lcf.sap_flux_err
+            data_uncorr = [(lcf + np.nan_to_num(lcf.sap_bkg))[np.isfinite(lcf.sap_bkg)] for lcf in data]
+
+            lc = lk.LightCurveCollection(data_uncorr).stitch(lambda x:x).normalize()
+            lc.flux_err.value[~np.isfinite(lc.flux_err.value)] = np.nanmedian(lc.flux_err.value)
+
+            lc_bkg = lk.LightCurveCollection(data_uncorr).stitch(lambda x:x)
+            lc_bkg.flux = lc_bkg.sap_bkg
+            lc_bkg.flux_err = lc_bkg.sap_bkg_err
+            lc_bkg = lc_bkg.normalize()
+            lc_bkg.flux_err.value[~np.isfinite(lc_bkg.flux_err.value)] = np.nanmedian(lc_bkg.flux_err.value)
+        
             bkgs = [
                 lk.correctors.DesignMatrix(
                     np.nan_to_num(lcf.sap_bkg.value), name="bkg")
