@@ -35,7 +35,7 @@ def vstack(dms):
 
 
 def SIP(
-    tpfs,
+    data,
     sigma=5,
     min_period=10,
     max_period=100,
@@ -57,7 +57,7 @@ def SIP(
 
     Parameters
     ----------
-    tpfs : lightkurve.TargetPixelFileCollection or lk.collections.LightCurveCollection
+    data : lightkurve.TargetPixelFileCollection or lk.collections.LightCurveCollection
         A collection of target pixel files or light curve files from the TESS mission. 
         This can be generated using lightkurve's search functions, for example:
             tpfs = lk.search_targetpixelfile('TIC 288735205', mission='tess').download_all()
@@ -102,35 +102,35 @@ def SIP(
             model: the systematics model used to correct the light curve
     """
 
-    if ((type(tpfs) is lk.collections.TargetPixelFileCollection) or 
-            (type(tpfs) is lk.targetpixelfile.TessTargetPixelFile)):
+    if ((type(data) is lk.collections.TargetPixelFileCollection) or 
+            (type(data) is lk.targetpixelfile.TessTargetPixelFile)):
         # Get the un-background subtracted data
         print("Target Pixel File Input")
-        if hasattr(tpfs[0], "flux_bkg"):
-            tpfs_uncorr = [
+        if hasattr(data[0], "flux_bkg"):
+            data_uncorr = [
                 (tpf + np.nan_to_num(tpf.flux_bkg.value))[
                     np.isfinite(np.nansum(tpf.flux_bkg.value, axis=(1, 2)))
                 ]
-                for tpf in tpfs
+                for tpf in data
             ]
         else:
-            tpfs_uncorr = tpfs
+            data_uncorr = data
 
         apers = [
             tpf.pipeline_mask
             if tpf.pipeline_mask.any()
             else tpf.create_threshold_mask(aperture_threshold)
-            for tpf in tpfs_uncorr
+            for tpf in data_uncorr
         ]
         bkg_apers = [
             (~aper) & (np.nansum(tpf.flux, axis=0) != 0)
-            for aper, tpf in zip(apers, tpfs_uncorr)
+            for aper, tpf in zip(apers, data_uncorr)
         ]
         lc = (
             lk.LightCurveCollection(
                 [
                     tpf.to_lightcurve(aperture_mask=aper)
-                    for tpf, aper in zip(tpfs_uncorr, apers)
+                    for tpf, aper in zip(data_uncorr, apers)
                 ]
             )
             .stitch(lambda x: x)
@@ -143,7 +143,7 @@ def SIP(
             lk.LightCurveCollection(
                 [
                     tpf.to_lightcurve(aperture_mask=bkg_aper)
-                    for tpf, bkg_aper in zip(tpfs_uncorr, bkg_apers)
+                    for tpf, bkg_aper in zip(data_uncorr, bkg_apers)
                 ]
             )
             .stitch(lambda x: x)
@@ -154,20 +154,20 @@ def SIP(
         )
         
     # Check if tpfs is a lightcurve file rather than a target pixel file
-    elif ((type(tpfs) is lk.lightcurve.TessLightCurve) or 
-            (type(tpfs) is lk.collections.LightCurveCollection)):
+    elif ((type(data) is lk.lightcurve.TessLightCurve) or 
+            (type(data) is lk.collections.LightCurveCollection)):
         print("Lightcurve File Input")
-        for lcf in tpfs:
+        for lcf in data:
             lcf.sap_flux.value[~np.isfinite(lcf.sap_flux.value)] = np.nanmedian(lcf.sap_flux.value)
             lcf.sap_bkg.value[~np.isfinite(lcf.sap_bkg.value)] = np.nanmedian(lcf.sap_bkg.value)
             lcf.flux = lcf.sap_flux
             lcf.flux_err = lcf.sap_flux_err
-        tpfs_uncorr = [(lcf + np.nan_to_num(lcf.sap_bkg))[np.isfinite(lcf.sap_bkg)] for lcf in tpfs]
+        data_uncorr = [(lcf + np.nan_to_num(lcf.sap_bkg))[np.isfinite(lcf.sap_bkg)] for lcf in data]
 
-        lc = lk.LightCurveCollection(tpfs_uncorr).stitch(lambda x:x).normalize()
+        lc = lk.LightCurveCollection(data_uncorr).stitch(lambda x:x).normalize()
         lc.flux_err.value[~np.isfinite(lc.flux_err.value)] = np.nanmedian(lc.flux_err.value)
 
-        lc_bkg = lk.LightCurveCollection(tpfs_uncorr).stitch(lambda x:x)
+        lc_bkg = lk.LightCurveCollection(data_uncorr).stitch(lambda x:x)
         lc_bkg.flux = lc_bkg.sap_bkg
         lc_bkg.flux_err = lc_bkg.sap_bkg_err
         lc_bkg = lc_bkg.normalize()
@@ -176,25 +176,25 @@ def SIP(
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
 
-        if ((type(tpfs) is lk.collections.TargetPixelFileCollection) or 
-                (type(tpfs) is lk.targetpixelfile.TessTargetPixelFile):
+        if ((type(data) is lk.collections.TargetPixelFileCollection) or 
+                (type(data) is lk.targetpixelfile.TessTargetPixelFile):
             bkgs = [
                 lk.correctors.DesignMatrix(
                     np.nan_to_num(tpf.flux.value[:, bkg_aper]), name="bkg")
                 .pca(npca_components)
                 .append_constant()
                 .to_sparse()
-                for tpf, bkg_aper in zip(tpfs_uncorr, bkg_apers)
+                for tpf, bkg_aper in zip(data_uncorr, bkg_apers)
             ]
-        elif ((type(tpfs) is lk.lightcurve.TessLightCurve) or 
-                (type(tpfs) is lk.collections.LightCurveCollection):
+        elif ((type(data) is lk.lightcurve.TessLightCurve) or 
+                (type(data) is lk.collections.LightCurveCollection):
             bkgs = [
                 lk.correctors.DesignMatrix(
                     np.nan_to_num(lcf.sap_bkg.value), name="bkg")
                 .pca(npca_components)
                 .append_constant()
                 .to_sparse() 
-                for lcf in tpfs_uncorr
+                for lcf in data_uncorr
             ]
               
         for bkg in bkgs:
@@ -207,7 +207,7 @@ def SIP(
     # Split at the datadownlink
     bkgs = [
         bkg.split(list((np.where(np.diff(tpf.time.jd) > 0.3)[0] + 1)))
-        for bkg, tpf in zip(bkgs, tpfs_uncorr)
+        for bkg, tpf in zip(bkgs, data_uncorr)
     ]
     systematics_dm = vstack(bkgs)
     sigma_f_inv = sparse.csr_matrix(1 / lc.flux_err.value[:, None] ** 2)
@@ -243,7 +243,7 @@ def SIP(
 
     if sff:
         sff_dm = []
-        for tpf in tpfs_uncorr:
+        for tpf in data_uncorr:
             s = lk.correctors.SFFCorrector(tpf.to_lightcurve())
             _ = s.correct(**sff_kwargs)
             sff_dm.append(s.dmc["sff"].to_sparse())
