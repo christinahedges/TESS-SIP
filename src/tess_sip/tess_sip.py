@@ -189,25 +189,21 @@ def SIP(
         # Setup for when input data is a collection of light curve files
         elif isinstance(data, lk.LightCurveCollection):
             for lcf in data:
-                lcf.sap_flux.value[~np.isfinite(lcf.sap_flux.value)] = np.nanmedian(lcf.sap_flux.value)
-                lcf.sap_bkg.value[~np.isfinite(lcf.sap_bkg.value)] = np.nanmedian(lcf.sap_bkg.value)
+                lcf.remove_nans(column="sap_flux").remove_nans(column="sap_bkg")
                 lcf.flux = lcf.sap_flux
                 lcf.flux_err = lcf.sap_flux_err
             data_uncorr = [(lcf + np.nan_to_num(lcf.sap_bkg))[np.isfinite(lcf.sap_bkg)] for lcf in data]
 
             lc = lk.LightCurveCollection(data_uncorr).stitch(lambda x:x).normalize()
-            lc.flux_err.value[~np.isfinite(lc.flux_err.value)] = np.nanmedian(lc.flux_err.value)
 
             lc_bkg = lk.LightCurveCollection(data_uncorr).stitch(lambda x:x)
             lc_bkg.flux = lc_bkg.sap_bkg
             lc_bkg.flux_err = lc_bkg.sap_bkg_err
             lc_bkg = lc_bkg.normalize()
-            lc_bkg.flux_err.value[~np.isfinite(lc_bkg.flux_err.value)] = np.nanmedian(lc_bkg.flux_err.value)
         
             bkgs = [
                 lk.correctors.DesignMatrix(
                     np.nan_to_num(lcf.sap_bkg.value), name="bkg")
-                .pca(npca_components)
                 .append_constant()
                 .to_sparse() 
                 for lcf in data_uncorr
