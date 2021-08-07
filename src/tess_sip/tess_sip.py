@@ -175,10 +175,12 @@ def SIP(
         
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
+
         if ((type(tpfs) is lk.collections.TargetPixelFileCollection) or 
                 (type(tpfs) is lk.targetpixelfile.TessTargetPixelFile):
             bkgs = [
-                lk.correctors.DesignMatrix(tpf.flux.value[:, bkg_aper], name="bkg")
+                lk.correctors.DesignMatrix(
+                    np.nan_to_num(tpf.flux.value[:, bkg_aper]), name="bkg")
                 .pca(npca_components)
                 .append_constant()
                 .to_sparse()
@@ -187,13 +189,14 @@ def SIP(
         elif ((type(tpfs) is lk.lightcurve.TessLightCurve) or 
                 (type(tpfs) is lk.collections.LightCurveCollection):
             bkgs = [
-                lk.correctors.DesignMatrix(lcf.sap_bkg.value, name="bkg")
+                lk.correctors.DesignMatrix(
+                    np.nan_to_num(lcf.sap_bkg.value), name="bkg")
                 .pca(npca_components)
                 .append_constant()
                 .to_sparse() 
                 for lcf in tpfs_uncorr
             ]
-            
+              
         for bkg in bkgs:
             bkg.prior_mu[-1] = 1
             bkg.prior_sigma[-1] = 0.1
@@ -207,7 +210,6 @@ def SIP(
         for bkg, tpf in zip(bkgs, tpfs_uncorr)
     ]
     systematics_dm = vstack(bkgs)
-
     sigma_f_inv = sparse.csr_matrix(1 / lc.flux_err.value[:, None] ** 2)
 
     def fit_model(lc, mask=None, return_model=False):
@@ -234,6 +236,7 @@ def SIP(
         ),
         name="LS",
     ).to_sparse()
+    ls_dm.prior_sigma = np.ones(ls_dm.shape[1]) * 1000
     dm = lk.correctors.SparseDesignMatrixCollection(
         [systematics_dm, ls_dm]
     ).to_designmatrix(name="design_matrix")
@@ -250,9 +253,10 @@ def SIP(
         )
 
     # Do a first pass at 27 days, just to find ridiculous outliers
-    mod = fit_model(lc, return_model=True)
+    mask = np.isfinite(lc.flux.value)
+    mask &= np.isfinite(lc.flux_err.value)
+    mod = fit_model(lc, mask=mask, return_model=True)
     mask = ~(lc - mod * lc.flux.unit).remove_outliers(return_mask=True, sigma=sigma)[1]
-
     # Loop over some periods we care about
     periods = 1 / np.linspace(1 / min_period, 1 / max_period, nperiods)
     if custom_periods is not None:
