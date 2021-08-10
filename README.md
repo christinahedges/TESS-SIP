@@ -1,4 +1,6 @@
 # TESS SIP
+<a href="https://github.com/ssdatalab/TESS-SIP/workflows/tests.yml"><img src="https://github.com/ssdatalab/TESS-SIP/workflows/pytest/badge.svg" alt="Test status"/></a>
+<a href="https://pypi.python.org/pypi/TESS-SIP"><img src="https://img.shields.io/pypi/v/TESS-SIP" alt="pypi status"></a>
 <a href="https://doi.org/10.5281/zenodo.4300754"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.4300754.svg" alt="DOI"></a>
 
 Tool for creating a Systematics-insensitive Periodogram (SIP) to detect long period rotation in NASA's TESS mission data. Read more about TESS-SIP in our published [Research Note of the American Astronomical Society](https://iopscience.iop.org/article/10.3847/2515-5172/abd106/meta).
