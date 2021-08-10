@@ -58,7 +58,7 @@ def SIP(
     Parameters
     ----------
     data : lightkurve.TargetPixelFileCollection or lk.collections.LightCurveCollection
-        A collection of target pixel files or light curve files from the TESS mission. 
+        A collection of target pixel files or light curve files from the TESS mission.
         This can be generated using lightkurve's search functions, for example:
             tpfs = lk.search_targetpixelfile('TIC 288735205', mission='tess').download_all()
             OR
@@ -121,12 +121,12 @@ def SIP(
             or light curve files of type:
             lightkurve.TargetPixelFileCollection
             OR
-            lightkurve.LightCurveCollection""")    
-    
-    # Setup data 
+            lightkurve.LightCurveCollection""")
+
+    # Setup data
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')
-    
+
         # Setup for when input data is a collection of target pixel files
         if isinstance(data, lk.TargetPixelFileCollection):
             # Get the un-background subtracted data
@@ -160,7 +160,9 @@ def SIP(
                 .stitch(lambda x: x)
                 .normalize()
             )
-            lc.flux_err.value[~np.isfinite(lc.flux_err.value)] = np.nanmedian(lc.flux_err.value)
+            lc.flux_err.value[~np.isfinite(lc.flux_err.value)] = (
+                np.nanmedian(lc.flux_err.value)
+            )
 
             # Run the same routines on the background pixels
             lc_bkg = (
@@ -173,10 +175,10 @@ def SIP(
                 .stitch(lambda x: x)
                 .normalize()
             )
-            lc_bkg.flux_err.value[~np.isfinite(lc_bkg.flux_err.value)] = np.nanmedian(
-                lc_bkg.flux_err.value
+            lc_bkg.flux_err.value[~np.isfinite(lc_bkg.flux_err.value)] = (
+                np.nanmedian(lc_bkg.flux_err.value)
             )
-            
+
             bkgs = [
                 lk.correctors.DesignMatrix(
                     np.nan_to_num(tpf.flux.value[:, bkg_aper]), name="bkg")
@@ -189,26 +191,34 @@ def SIP(
         # Setup for when input data is a collection of light curve files
         elif isinstance(data, lk.LightCurveCollection):
             for lcf in data:
-                lcf.remove_nans(column="sap_flux").remove_nans(column="sap_bkg")
+                lcf.remove_nans(column="sap_flux")
+                lcf.remove_nans(column="sap_bkg")
                 lcf.flux = lcf.sap_flux
                 lcf.flux_err = lcf.sap_flux_err
-            data_uncorr = [(lcf + np.nan_to_num(lcf.sap_bkg))[np.isfinite(lcf.sap_bkg)] for lcf in data]
+            data_uncorr = [
+                (lcf + np.nan_to_num(lcf.sap_bkg))[np.isfinite(lcf.sap_bkg)]
+                for lcf in data
+            ]
 
-            lc = lk.LightCurveCollection(data_uncorr).stitch(lambda x:x).normalize()
+            lc = (
+                lk.LightCurveCollection(data_uncorr)
+                .stitch(lambda x:x)
+                .normalize()
+            )
 
             lc_bkg = lk.LightCurveCollection(data_uncorr).stitch(lambda x:x)
             lc_bkg.flux = lc_bkg.sap_bkg
             lc_bkg.flux_err = lc_bkg.sap_bkg_err
             lc_bkg = lc_bkg.normalize()
-        
+
             bkgs = [
                 lk.correctors.DesignMatrix(
                     np.nan_to_num(lcf.sap_bkg.value), name="bkg")
                 .append_constant()
-                .to_sparse() 
+                .to_sparse()
                 for lcf in data_uncorr
             ]
-              
+
         for bkg in bkgs:
             bkg.prior_mu[-1] = 1
             bkg.prior_sigma[-1] = 0.1
@@ -227,10 +237,14 @@ def SIP(
     def fit_model(lc, mask=None, return_model=False):
         if mask is None:
             mask = np.ones(len(lc.flux.value), bool)
-        sigma_w_inv = dm.X[mask].T.dot(dm.X[mask].multiply(sigma_f_inv[mask])).toarray()
+        sigma_w_inv = (
+            dm.X[mask].T.dot(dm.X[mask].multiply(sigma_f_inv[mask]))
+            .toarray()
+        )
         sigma_w_inv += np.diag(1.0 / dm.prior_sigma ** 2)
 
-        B = dm.X[mask].T.dot((lc.flux.value[mask] / lc.flux_err.value[mask] ** 2))
+        B = dm.X[mask].T.dot((lc.flux.value[mask] /
+                              lc.flux_err.value[mask] ** 2))
         B += dm.prior_mu / dm.prior_sigma ** 2
         w = np.linalg.solve(sigma_w_inv, B)
         with warnings.catch_warnings():
@@ -260,15 +274,19 @@ def SIP(
             _ = s.correct(**sff_kwargs)
             sff_dm.append(s.dmc["sff"].to_sparse())
         sff_dm = vstack(sff_dm)
-        dm = lk.correctors.SparseDesignMatrixCollection([dm, sff_dm]).to_designmatrix(
-            name="design_matrix"
+        dm = (
+            lk.correctors.SparseDesignMatrixCollection([dm, sff_dm])
+            .to_designmatrix(name="design_matrix")
         )
 
     # Do a first pass at 27 days, just to find ridiculous outliers
     mask = np.isfinite(lc.flux.value)
     mask &= np.isfinite(lc.flux_err.value)
     mod = fit_model(lc, mask=mask, return_model=True)
-    mask = ~(lc - mod * lc.flux.unit).remove_outliers(return_mask=True, sigma=sigma)[1]
+    mask = (
+        ~(lc - mod * lc.flux.unit)
+        .remove_outliers(return_mask=True, sigma=sigma)[1]
+    )
     # Loop over some periods we care about
     periods = 1 / np.linspace(1 / min_period, 1 / max_period, nperiods)
     if given_periods is not None:
@@ -278,9 +296,12 @@ def SIP(
     ws_bkg = np.zeros((len(periods), dm.X.shape[1]))
     ws_err_bkg = np.zeros((len(periods), dm.X.shape[1]))
 
-    for idx, period in enumerate(tqdm(periods, desc="Running pixels in aperture")):
-        dm.X[:, -ls_dm.shape[1] :] = lombscargle.implementations.mle.design_matrix(
-            lc.time.jd, frequency=1 / period, bias=False, nterms=1
+    for idx, period in enumerate(tqdm(periods,
+                                      desc="Running pixels in aperture")):
+        dm.X[:, -ls_dm.shape[1] :] = (
+            lombscargle.implementations.mle
+            .design_matrix(lc.time.jd, frequency=1 / period,
+                           bias=False, nterms=1)
         )
         ws[idx], ws_err[idx] = fit_model(lc, mask=mask)
         ws_bkg[idx], ws_err_bkg[idx] = fit_model(lc_bkg, mask=mask)
