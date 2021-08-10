@@ -34,6 +34,182 @@ def vstack(dms):
         )
 
 
+def prepare_tpfs(data, npca_components=3, aperture_threshold=3):
+    """Creates a dataset for TESS-SIP
+
+    Parameters:
+    -----------
+    data: lk.TargetPixelFileCollection
+        Collection of target pixel files create a SIP
+    npca_components: int
+        Number of principle components to use for background
+
+    Returns:
+    -----------
+    lc : lk.LightCurve
+        The light curve to create a TESS SIP of
+    lc_bkg: : lk.LightCurve
+        The light curve of the background components
+    data_uncorr: list
+        List of the input TPFs, with the scattered light
+        re added. (TESS Pipeline removes it)
+    bkgs : list
+        List of design matrices containing the background information.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+
+        # Get the un-background subtracted data
+        if hasattr(data[0], "flux_bkg"):
+            data_uncorr = [
+                (tpf + np.nan_to_num(tpf.flux_bkg.value))[
+                    np.isfinite(np.nansum(tpf.flux_bkg.value, axis=(1, 2)))
+                ]
+                for tpf in data
+            ]
+        else:
+            data_uncorr = [tpf for tpf in data]
+
+        apers = [
+            tpf.pipeline_mask
+            if tpf.pipeline_mask.any()
+            else tpf.create_threshold_mask(aperture_threshold)
+            for tpf in data_uncorr
+        ]
+        bkg_apers = [
+            (~aper) & (np.nansum(tpf.flux, axis=0) != 0)
+            for aper, tpf in zip(apers, data_uncorr)
+        ]
+        lc = (
+            lk.LightCurveCollection(
+                [
+                    tpf.to_lightcurve(aperture_mask=aper)
+                    for tpf, aper in zip(data_uncorr, apers)
+                ]
+            )
+            .stitch(lambda x: x)
+            .normalize()
+        )
+        lc.flux_err.value[~np.isfinite(lc.flux_err.value)] = np.nanmedian(
+            lc.flux_err.value
+        )
+
+        # Run the same routines on the background pixels
+        lc_bkg = (
+            lk.LightCurveCollection(
+                [
+                    tpf.to_lightcurve(aperture_mask=bkg_aper)
+                    for tpf, bkg_aper in zip(data_uncorr, bkg_apers)
+                ]
+            )
+            .stitch(lambda x: x)
+            .normalize()
+        )
+        lc_bkg.flux_err.value[~np.isfinite(lc_bkg.flux_err.value)] = np.nanmedian(
+            lc_bkg.flux_err.value
+        )
+
+        bkgs = [
+            lk.correctors.DesignMatrix(
+                np.nan_to_num(tpf.flux.value[:, bkg_aper]), name="bkg"
+            )
+            .pca(npca_components)
+            .append_constant()
+            .to_sparse()
+            for tpf, bkg_aper in zip(data_uncorr, bkg_apers)
+        ]
+        for bkg in bkgs:
+            bkg.prior_mu[-1] = 1
+            bkg.prior_sigma[-1] = 0.1
+            bkg.prior_mu[:-1] = 0
+            bkg.prior_sigma[:-1] = 0.1
+
+        # Split at the datadownlink
+        bkgs = [
+            bkg.split(list((np.where(np.diff(tpf.time.jd) > 0.3)[0] + 1)))
+            for bkg, tpf in zip(bkgs, data_uncorr)
+        ]
+    return lc, lc_bkg, data_uncorr, bkgs
+
+
+def prepare_lcfs(data):
+    """Creates a dataset for TESS-SIP
+
+    Parameters:
+    -----------
+    data: lk.LightCurveCollection
+        Collection of light curve files create a SIP
+    npca_components: int
+        Number of principle components to use for background
+
+    Returns:
+    -----------
+    lc : lk.LightCurve
+        The light curve to create a TESS SIP of
+    lc_bkg: : lk.LightCurve
+        The light curve of the background components
+    data_uncorr: list
+        List of the input LCFs, with the scattered light
+        re added. (TESS Pipeline removes it)
+    bkgs : list
+        List of design matrices containing the background information.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+
+        for lcf in data:
+            lcf.remove_nans(column="sap_flux")
+            lcf.remove_nans(column="sap_bkg")
+            lcf.flux = lcf.sap_flux
+            lcf.flux_err = lcf.sap_flux_err
+        data_uncorr = [
+            (lcf + np.nan_to_num(lcf.sap_bkg))[np.isfinite(lcf.sap_bkg)] for lcf in data
+        ]
+
+        lc = lk.LightCurveCollection(data_uncorr).stitch(lambda x: x).normalize()
+
+        lc_bkg = lk.LightCurveCollection(data_uncorr).stitch(lambda x: x)
+        lc_bkg.flux = lc_bkg.sap_bkg
+        lc_bkg.flux_err = lc_bkg.sap_bkg_err
+        lc_bkg = lc_bkg.normalize()
+
+        bkgs = [
+            lk.correctors.DesignMatrix(np.nan_to_num(lcf.sap_bkg.value), name="bkg")
+            .append_constant()
+            .to_sparse()
+            for lcf in data_uncorr
+        ]
+        for bkg in bkgs:
+            bkg.prior_mu[-1] = 1
+            bkg.prior_sigma[-1] = 0.1
+            bkg.prior_mu[:-1] = 0
+            bkg.prior_sigma[:-1] = 0.1
+
+        # Split at the datadownlink
+        bkgs = [
+            bkg.split(list((np.where(np.diff(tpf.time.jd) > 0.3)[0] + 1)))
+            for bkg, tpf in zip(bkgs, data_uncorr)
+        ]
+    return lc, lc_bkg, data_uncorr, bkgs
+
+
+def fit_model(lc, dm, sigma_f_inv, mask=None, return_model=False):
+    if mask is None:
+        mask = np.ones(len(lc.flux.value), bool)
+    sigma_w_inv = dm.X[mask].T.dot(dm.X[mask].multiply(sigma_f_inv[mask])).toarray()
+    sigma_w_inv += np.diag(1.0 / dm.prior_sigma ** 2)
+
+    B = dm.X[mask].T.dot((lc.flux.value[mask] / lc.flux_err.value[mask] ** 2))
+    B += dm.prior_mu / dm.prior_sigma ** 2
+    w = np.linalg.solve(sigma_w_inv, B)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        werr = ((np.linalg.inv(sigma_w_inv)) ** 0.5).diagonal()
+    if return_model:
+        return dm.X.dot(w)
+    return w, werr
+
+
 def SIP(
     data,
     sigma=5,
@@ -44,7 +220,7 @@ def SIP(
     aperture_threshold=3,
     sff=False,
     sff_kwargs={},
-    given_periods=None,
+    periods=None,
 ):
     """
     Systematics-insensitive periodogram for finding periods in long period NASA's TESS data.
@@ -83,7 +259,7 @@ def SIP(
         When True, will run SFF detrending.
     sff_kwargs : dict
         Dictionary of SFF key words to pass. See lightkurve's SFFCorrector.
-    given_periods : None or numpy.ndarray
+    periods : None or numpy.ndarray
         A list of specific periods to use when evaluating the periodogram. If this
         parameter is not None, then the parameters min_period, max_period, and
         nperiods will be ignored.
@@ -108,151 +284,37 @@ def SIP(
             raise TypeError(
                 """The list of objects within the input data type
                 lightkurve.TargetPixelFileCollection must be all be type:
-                lightkurve.TessTargetPixelFile""")
+                lightkurve.TessTargetPixelFile"""
+            )
     elif isinstance(data, lk.LightCurveCollection):
         if not all([isinstance(lcf, lk.TessLightCurve) for lcf in data]):
             raise TypeError(
                 """The list of objects within the input data type
                 lightkurve.LightCurveCollection must be all be type:
-                lightkurve.TessLightCurve""")
+                lightkurve.TessLightCurve"""
+            )
     else:
         raise TypeError(
             """The data input must be a collection of target pixel files
             or light curve files of type:
             lightkurve.TargetPixelFileCollection
             OR
-            lightkurve.LightCurveCollection""")
+            lightkurve.LightCurveCollection"""
+        )
 
     # Setup data
-    with warnings.catch_warnings():
-        warnings.simplefilter('ignore')
+    # Setup for when input data is a collection of target pixel files
+    if isinstance(data, lk.TargetPixelFileCollection):
+        lc, lc_bkg, data_uncorr, bkgs = prepare_tpfs(
+            data, npca_components=npca_components, aperture_threshold=aperture_threshold
+        )
 
-        # Setup for when input data is a collection of target pixel files
-        if isinstance(data, lk.TargetPixelFileCollection):
-            # Get the un-background subtracted data
-            if hasattr(data[0], "flux_bkg"):
-                data_uncorr = [
-                    (tpf + np.nan_to_num(tpf.flux_bkg.value))[
-                        np.isfinite(np.nansum(tpf.flux_bkg.value, axis=(1, 2)))
-                    ]
-                    for tpf in data
-                ]
-            else:
-                data_uncorr = data
+    # Setup for when input data is a collection of light curve files
+    elif isinstance(data, lk.LightCurveCollection):
+        lc, lc_bkg, data_uncorr, bkgs = prepare_lcfs(data)
 
-            apers = [
-                tpf.pipeline_mask
-                if tpf.pipeline_mask.any()
-                else tpf.create_threshold_mask(aperture_threshold)
-                for tpf in data_uncorr
-            ]
-            bkg_apers = [
-                (~aper) & (np.nansum(tpf.flux, axis=0) != 0)
-                for aper, tpf in zip(apers, data_uncorr)
-            ]
-            lc = (
-                lk.LightCurveCollection(
-                    [
-                        tpf.to_lightcurve(aperture_mask=aper)
-                        for tpf, aper in zip(data_uncorr, apers)
-                    ]
-                )
-                .stitch(lambda x: x)
-                .normalize()
-            )
-            lc.flux_err.value[~np.isfinite(lc.flux_err.value)] = (
-                np.nanmedian(lc.flux_err.value)
-            )
-
-            # Run the same routines on the background pixels
-            lc_bkg = (
-                lk.LightCurveCollection(
-                    [
-                        tpf.to_lightcurve(aperture_mask=bkg_aper)
-                        for tpf, bkg_aper in zip(data_uncorr, bkg_apers)
-                    ]
-                )
-                .stitch(lambda x: x)
-                .normalize()
-            )
-            lc_bkg.flux_err.value[~np.isfinite(lc_bkg.flux_err.value)] = (
-                np.nanmedian(lc_bkg.flux_err.value)
-            )
-
-            bkgs = [
-                lk.correctors.DesignMatrix(
-                    np.nan_to_num(tpf.flux.value[:, bkg_aper]), name="bkg")
-                .pca(npca_components)
-                .append_constant()
-                .to_sparse()
-                for tpf, bkg_aper in zip(data_uncorr, bkg_apers)
-            ]
-
-        # Setup for when input data is a collection of light curve files
-        elif isinstance(data, lk.LightCurveCollection):
-            for lcf in data:
-                lcf.remove_nans(column="sap_flux")
-                lcf.remove_nans(column="sap_bkg")
-                lcf.flux = lcf.sap_flux
-                lcf.flux_err = lcf.sap_flux_err
-            data_uncorr = [
-                (lcf + np.nan_to_num(lcf.sap_bkg))[np.isfinite(lcf.sap_bkg)]
-                for lcf in data
-            ]
-
-            lc = (
-                lk.LightCurveCollection(data_uncorr)
-                .stitch(lambda x:x)
-                .normalize()
-            )
-
-            lc_bkg = lk.LightCurveCollection(data_uncorr).stitch(lambda x:x)
-            lc_bkg.flux = lc_bkg.sap_bkg
-            lc_bkg.flux_err = lc_bkg.sap_bkg_err
-            lc_bkg = lc_bkg.normalize()
-
-            bkgs = [
-                lk.correctors.DesignMatrix(
-                    np.nan_to_num(lcf.sap_bkg.value), name="bkg")
-                .append_constant()
-                .to_sparse()
-                for lcf in data_uncorr
-            ]
-
-        for bkg in bkgs:
-            bkg.prior_mu[-1] = 1
-            bkg.prior_sigma[-1] = 0.1
-
-            bkg.prior_mu[:-1] = 0
-            bkg.prior_sigma[:-1] = 0.1
-
-    # Split at the datadownlink
-    bkgs = [
-        bkg.split(list((np.where(np.diff(tpf.time.jd) > 0.3)[0] + 1)))
-        for bkg, tpf in zip(bkgs, data_uncorr)
-    ]
     systematics_dm = vstack(bkgs)
     sigma_f_inv = sparse.csr_matrix(1 / lc.flux_err.value[:, None] ** 2)
-
-    def fit_model(lc, mask=None, return_model=False):
-        if mask is None:
-            mask = np.ones(len(lc.flux.value), bool)
-        sigma_w_inv = (
-            dm.X[mask].T.dot(dm.X[mask].multiply(sigma_f_inv[mask]))
-            .toarray()
-        )
-        sigma_w_inv += np.diag(1.0 / dm.prior_sigma ** 2)
-
-        B = dm.X[mask].T.dot((lc.flux.value[mask] /
-                              lc.flux_err.value[mask] ** 2))
-        B += dm.prior_mu / dm.prior_sigma ** 2
-        w = np.linalg.solve(sigma_w_inv, B)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            werr = ((np.linalg.inv(sigma_w_inv)) ** 0.5).diagonal()
-        if return_model:
-            return dm.X.dot(w)
-        return w, werr
 
     # Make a dummy design matrix
     period = 27
@@ -269,42 +331,39 @@ def SIP(
 
     if sff:
         sff_dm = []
-        for tpf in data_uncorr:
-            s = lk.correctors.SFFCorrector(tpf.to_lightcurve())
+        for lc in data_uncorr:
+            if not isinstance(lc, lk.LightCurve):
+                lc = lc.to_lightcurve()
+            s = lk.correctors.SFFCorrector(lc)
             _ = s.correct(**sff_kwargs)
             sff_dm.append(s.dmc["sff"].to_sparse())
         sff_dm = vstack(sff_dm)
-        dm = (
-            lk.correctors.SparseDesignMatrixCollection([dm, sff_dm])
-            .to_designmatrix(name="design_matrix")
+        dm = lk.correctors.SparseDesignMatrixCollection([dm, sff_dm]).to_designmatrix(
+            name="design_matrix"
         )
 
     # Do a first pass at 27 days, just to find ridiculous outliers
     mask = np.isfinite(lc.flux.value)
     mask &= np.isfinite(lc.flux_err.value)
-    mod = fit_model(lc, mask=mask, return_model=True)
-    mask = (
-        ~(lc - mod * lc.flux.unit)
-        .remove_outliers(return_mask=True, sigma=sigma)[1]
-    )
-    # Loop over some periods we care about
-    periods = 1 / np.linspace(1 / min_period, 1 / max_period, nperiods)
-    if given_periods is not None:
-        periods = np.copy(given_periods)
+    mod = fit_model(lc, dm, sigma_f_inv, mask=mask, return_model=True)
+    mask = ~(lc - mod * lc.flux.unit).remove_outliers(return_mask=True, sigma=sigma)[1]
+    if periods is not None:
+        periods = np.copy(periods)
+    else:
+        # Loop over some periods we care about
+        periods = 1 / np.linspace(1 / min_period, 1 / max_period, nperiods)
+
     ws = np.zeros((len(periods), dm.X.shape[1]))
     ws_err = np.zeros((len(periods), dm.X.shape[1]))
     ws_bkg = np.zeros((len(periods), dm.X.shape[1]))
     ws_err_bkg = np.zeros((len(periods), dm.X.shape[1]))
 
-    for idx, period in enumerate(tqdm(periods,
-                                      desc="Running pixels in aperture")):
-        dm.X[:, -ls_dm.shape[1] :] = (
-            lombscargle.implementations.mle
-            .design_matrix(lc.time.jd, frequency=1 / period,
-                           bias=False, nterms=1)
+    for idx, period in enumerate(tqdm(periods, desc="Running pixels in aperture")):
+        dm.X[:, -ls_dm.shape[1] :] = lombscargle.implementations.mle.design_matrix(
+            lc.time.jd, frequency=1 / period, bias=False, nterms=1
         )
-        ws[idx], ws_err[idx] = fit_model(lc, mask=mask)
-        ws_bkg[idx], ws_err_bkg[idx] = fit_model(lc_bkg, mask=mask)
+        ws[idx], ws_err[idx] = fit_model(lc, dm, sigma_f_inv, mask=mask)
+        ws_bkg[idx], ws_err_bkg[idx] = fit_model(lc_bkg, dm, sigma_f_inv, mask=mask)
     power = (ws[:, -2] ** 2 + ws[:, -1] ** 2) ** 0.5
     am = np.argmax(power)
     dm.X[:, -ls_dm.shape[1] :] = lombscargle.implementations.mle.design_matrix(
