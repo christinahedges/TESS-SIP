@@ -1,5 +1,5 @@
 # TESS SIP
-<a href="https://github.com/ssdatalab/TESS-SIP/workflows/tests.yml"><img src="https://github.com/ssdatalab/TESS-SIP/workflows/pytest/badge.svg" alt="Test status"/></a>
+<a href="https://github.com/christinahedges/TESS-SIP/workflows/tests.yml"><img src="https://github.com/christinahedges/TESS-SIP/workflows/pytest/badge.svg" alt="Test status"/></a>
 <a href="https://pypi.python.org/pypi/TESS-SIP"><img src="https://img.shields.io/pypi/v/TESS-SIP" alt="pypi status"></a>
 <a href="https://doi.org/10.5281/zenodo.4300754"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.4300754.svg" alt="DOI"></a>
 
