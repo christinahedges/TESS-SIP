@@ -49,7 +49,7 @@ def prepare_tpfs(data, npca_components=3, aperture_threshold=3):
     lc : lk.LightCurve
         The light curve to create a TESS SIP of
     lc_bkg: : lk.LightCurve
-        The light curve of the background components
+        The light curve of the background pixels
     data_uncorr: list
         List of the input TPFs, with the scattered light
         re added. (TESS Pipeline removes it)
@@ -139,15 +139,11 @@ def prepare_lcfs(data):
     -----------
     data: lk.LightCurveCollection
         Collection of light curve files create a SIP
-    npca_components: int
-        Number of principle components to use for background
 
     Returns:
     -----------
     lc : lk.LightCurve
         The light curve to create a TESS SIP of
-    lc_bkg: : lk.LightCurve
-        The light curve of the background components
     data_uncorr: list
         List of the input LCFs, with the scattered light
         re added. (TESS Pipeline removes it)
@@ -168,10 +164,10 @@ def prepare_lcfs(data):
 
         lc = lk.LightCurveCollection(data_uncorr).stitch(lambda x: x).normalize()
 
-        lc_bkg = lk.LightCurveCollection(data_uncorr).stitch(lambda x: x)
-        lc_bkg.flux = lc_bkg.sap_bkg
-        lc_bkg.flux_err = lc_bkg.sap_bkg_err
-        lc_bkg = lc_bkg.normalize()
+        # lc_bkg = lk.LightCurveCollection(data_uncorr).stitch(lambda x: x)
+        # lc_bkg.flux = lc_bkg.sap_bkg
+        # lc_bkg.flux_err = lc_bkg.sap_bkg_err
+        # lc_bkg = lc_bkg.normalize()
 
         bkgs = [
             lk.correctors.DesignMatrix(np.nan_to_num(lcf.sap_bkg.value), name="bkg")
@@ -190,7 +186,7 @@ def prepare_lcfs(data):
             bkg.split(list((np.where(np.diff(tpf.time.jd) > 0.3)[0] + 1)))
             for bkg, tpf in zip(bkgs, data_uncorr)
         ]
-    return lc, lc_bkg, data_uncorr, bkgs
+    return lc, data_uncorr, bkgs
 
 
 def fit_model(lc, dm, sigma_f_inv, mask=None, return_model=False):
@@ -308,10 +304,12 @@ def SIP(
         lc, lc_bkg, data_uncorr, bkgs = prepare_tpfs(
             data, npca_components=npca_components, aperture_threshold=aperture_threshold
         )
+        fit_bkg = True
 
     # Setup for when input data is a collection of light curve files
     elif isinstance(data, lk.LightCurveCollection):
-        lc, lc_bkg, data_uncorr, bkgs = prepare_lcfs(data)
+        lc, data_uncorr, bkgs = prepare_lcfs(data)
+        fit_bkg = False
 
     systematics_dm = vstack(bkgs)
     sigma_f_inv = sparse.csr_matrix(1 / lc.flux_err.value[:, None] ** 2)
@@ -355,33 +353,35 @@ def SIP(
 
     ws = np.zeros((len(periods), dm.X.shape[1]))
     ws_err = np.zeros((len(periods), dm.X.shape[1]))
-    ws_bkg = np.zeros((len(periods), dm.X.shape[1]))
-    ws_err_bkg = np.zeros((len(periods), dm.X.shape[1]))
+    if fit_bkg:
+        ws_bkg = np.zeros((len(periods), dm.X.shape[1]))
+        ws_err_bkg = np.zeros((len(periods), dm.X.shape[1]))
 
     for idx, period in enumerate(tqdm(periods, desc="Running pixels in aperture")):
         dm.X[:, -ls_dm.shape[1] :] = lombscargle.implementations.mle.design_matrix(
             lc.time.jd, frequency=1 / period, bias=False, nterms=1
         )
         ws[idx], ws_err[idx] = fit_model(lc, dm, sigma_f_inv, mask=mask)
-        ws_bkg[idx], ws_err_bkg[idx] = fit_model(lc_bkg, dm, sigma_f_inv, mask=mask)
+        if fit_bkg:
+            ws_bkg[idx], ws_err_bkg[idx] = fit_model(lc_bkg, dm, sigma_f_inv, mask=mask)
     power = (ws[:, -2] ** 2 + ws[:, -1] ** 2) ** 0.5
     am = np.argmax(power)
     dm.X[:, -ls_dm.shape[1] :] = lombscargle.implementations.mle.design_matrix(
         lc.time.jd, frequency=1 / periods[am], bias=False, nterms=1
     )
     mod = dm.X[:, :-2].dot(ws[am][:-2])
-
-    power_bkg = (ws_bkg[:, -2] ** 2 + ws_bkg[:, -1] ** 2) ** 0.5
+    if fit_bkg:
+        power_bkg = (ws_bkg[:, -2] ** 2 + ws_bkg[:, -1] ** 2) ** 0.5
 
     r = {
         "periods": periods,
         "power": power,
         "raw_lc": lc,
-        "power_bkg": power_bkg,
-        "raw_lc_bkg": lc_bkg,
         "corr_lc": lc - mod * lc.flux.unit + 1 * lc.flux.unit,
         "period_at_max_power": periods[am],
         "model": mod * lc.flux.unit,
     }
-
+    if fit_bkg:
+        r["power_bkg"] = power_bkg
+        r["raw_lc_bkg"] = lc_bkg
     return r
