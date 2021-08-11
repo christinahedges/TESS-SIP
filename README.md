@@ -25,7 +25,7 @@ r = SIP(tpfs)
 
 `r` is a dictionary containing all the information required to build a plot like the one below.
 
-![Example SIP output](https://github.com/christinahedges/TESS-SIP/blob/master/demo.png?raw=true)
+![Example SIP output](https://github.com/christinahedges/TESS-SIP/blob/master/demo1.png?raw=true)
 
 ### Installation
 
